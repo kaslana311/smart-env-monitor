@@ -172,6 +172,35 @@ static uint8_t check_thresholds(const sensor_data_t *data)
 }
 
 /* ---------------------------------------------------------------
+ * 数据质量评估
+ * --------------------------------------------------------------- */
+
+/*
+ * 评估传感器数据质量等级
+ * @return 0-优秀 1-良好 2-可疑 3-不可靠
+ */
+static int evaluate_data_quality(const sensor_data_t *raw, const sensor_data_t *filtered)
+{
+    int quality = 0;
+
+    /* 检查原始值与滤波值偏差 */
+    float temp_diff = raw->temperature - filtered->temperature;
+    float humid_diff = raw->humidity - filtered->humidity;
+    float light_diff = raw->light - filtered->light;
+
+    if (temp_diff > 3.0f || temp_diff < -3.0f) quality++;
+    if (humid_diff > 5.0f || humid_diff < -5.0f) quality++;
+    if (light_diff > 100.0f || light_diff < -100.0f) quality++;
+
+    if (quality > 2) quality = 2;  /* 最高为可疑 */
+
+    return quality;
+}
+
+/* 数据质量标签 */
+static const char *quality_labels[] = {"Excellent", "Good", "Suspicious"};
+
+/* ---------------------------------------------------------------
  * 数据统计跟踪
  * --------------------------------------------------------------- */
 static sensor_data_t stat_min = {1000, 1000, 10000};  /* 最小值初始化为极大值 */
@@ -249,12 +278,13 @@ void process_thread_entry(void *parameter)
         /* 5. 通知显示线程有新数据 */
         rt_sem_release(&sem_display);
 
-        LOG_D("Processed sample #%d: T=%.1f H=%.1f L=%.0f flags=0x%02X",
+        LOG_D("Processed sample #%d: T=%.1f H=%.1f L=%.0f flags=0x%02X quality=%s",
               g_sys_status.sample_count,
               filtered_data.temperature,
               filtered_data.humidity,
               filtered_data.light,
-              flags);
+              flags,
+              quality_labels[evaluate_data_quality(&raw_data, &filtered_data)]);
     }
 }
 
