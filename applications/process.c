@@ -40,12 +40,31 @@ extern system_status_t g_sys_status;
  * 移动平均滤波器实现
  * --------------------------------------------------------------- */
 
+/* 原始值历史 (用于中值滤波预处理) */
+static float temp_raw_hist[3]  = {0};
+static float humid_raw_hist[3] = {0};
+static float light_raw_hist[3] = {0};
+static int   raw_hist_index = 0;
+
 /* 温度滤波缓冲区 */
 static float temp_buffer[FILTER_WINDOW_SIZE]  = {0};
 static float humid_buffer[FILTER_WINDOW_SIZE] = {0};
 static float light_buffer[FILTER_WINDOW_SIZE] = {0};
 static int   filter_index = 0;          /* 当前缓冲区写入位置 */
 static int   filter_count = 0;          /* 已填充的样本数 */
+
+/*
+ * 三点中值滤波 - 去除偶发脉冲噪声
+ * @param a, b, c  最近三个原始采样值
+ * @return         中位数值
+ */
+static float median3(float a, float b, float c)
+{
+    if (a > b) { float t = a; a = b; b = t; }
+    if (a > c) { float t = a; a = c; c = t; }
+    if (b > c) { float t = b; b = c; c = t; }
+    return b;
+}
 
 /*
  * 计算移动平均值
@@ -71,11 +90,31 @@ static float calc_moving_average(const float *buffer, int count)
 static sensor_data_t apply_filter(const sensor_data_t *raw)
 {
     sensor_data_t filtered;
+    sensor_data_t prefiltered;
 
-    /* 写入循环缓冲区 */
-    temp_buffer[filter_index]  = raw->temperature;
-    humid_buffer[filter_index] = raw->humidity;
-    light_buffer[filter_index] = raw->light;
+    /* 记录原始值历史 */
+    temp_raw_hist[raw_hist_index]  = raw->temperature;
+    humid_raw_hist[raw_hist_index] = raw->humidity;
+    light_raw_hist[raw_hist_index] = raw->light;
+
+    /* 中值滤波预处理 (去除脉冲噪声) */
+    prefiltered.temperature = median3(temp_raw_hist[0],
+                                      temp_raw_hist[1],
+                                      temp_raw_hist[2]);
+    prefiltered.humidity = median3(humid_raw_hist[0],
+                                    humid_raw_hist[1],
+                                    humid_raw_hist[2]);
+    prefiltered.light = median3(light_raw_hist[0],
+                                 light_raw_hist[1],
+                                 light_raw_hist[2]);
+
+    raw_hist_index++;
+    if (raw_hist_index >= 3) raw_hist_index = 0;
+
+    /* 写入移动平均循环缓冲区 */
+    temp_buffer[filter_index]  = prefiltered.temperature;
+    humid_buffer[filter_index] = prefiltered.humidity;
+    light_buffer[filter_index] = prefiltered.light;
 
     filter_index++;
     if (filter_index >= FILTER_WINDOW_SIZE)
