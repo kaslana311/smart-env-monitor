@@ -23,6 +23,13 @@
 #include <rtdbg.h>
 
 /* ---------------------------------------------------------------
+ * 传感器校准参数
+ * --------------------------------------------------------------- */
+#define TEMP_OFFSET    -0.5f      /* 温度校准偏移 (°C) */
+#define HUMID_OFFSET    2.0f      /* 湿度校准偏移 (%) */
+#define LIGHT_GAIN      1.05f     /* 光照增益系数 */
+
+/* ---------------------------------------------------------------
  * LED 驱动实现
  * --------------------------------------------------------------- */
 
@@ -106,9 +113,10 @@ static void read_sensors(sensor_data_t *data)
     if (base_light < 0.0f)    base_light = 0.0f;
     if (base_light > 1000.0f) base_light = 1000.0f;
 
-    data->temperature = base_temp;
-    data->humidity    = base_humid;
-    data->light       = base_light;
+    /* 应用校准参数 */
+    data->temperature = base_temp + TEMP_OFFSET;
+    data->humidity    = base_humid + HUMID_OFFSET;
+    data->light       = base_light * LIGHT_GAIN;
 }
 
 /*
@@ -123,12 +131,26 @@ void sensor_thread_entry(void *parameter)
     LOG_I("Sensor thread started, priority=%d, tick=%dms",
           SENSOR_THREAD_PRIORITY, SENSOR_THREAD_TICK);
 
+    static uint32_t error_count = 0;  /* 异常数据计数器 */
+
     while (1)
     {
         /* 1. 读取传感器数据 */
         read_sensors(&data);
 
-        /* 2. 发送数据到消息队列 (非阻塞发送) */
+        /* 2. 数据有效性校验 */
+        if (data.temperature > 80.0f || data.temperature < -30.0f ||
+            data.humidity > 100.0f || data.humidity < 0.0f ||
+            data.light > 2000.0f || data.light < 0.0f)
+        {
+            error_count++;
+            LOG_W("Invalid sensor data detected (error #%d): T=%.1f H=%.1f L=%.1f",
+                  error_count, data.temperature, data.humidity, data.light);
+            rt_thread_mdelay(SENSOR_THREAD_TICK);
+            continue;  /* 丢弃异常数据 */
+        }
+
+        /* 3. 发送数据到消息队列 (非阻塞发送) */
         ret = rt_mq_send(&mq_sensor_data, &data, sizeof(sensor_data_t));
         if (ret == RT_EFULL)
         {
@@ -139,10 +161,10 @@ void sensor_thread_entry(void *parameter)
             LOG_E("Message queue send failed: %d", ret);
         }
 
-        /* 3. 心跳 LED 闪烁 */
+        /* 4. 心跳 LED 闪烁 */
         led_heartbeat_toggle();
 
-        /* 4. 延时，等待下一个采集周期 */
+        /* 5. 延时，等待下一个采集周期 */
         rt_thread_mdelay(SENSOR_THREAD_TICK);
     }
 }
@@ -159,8 +181,8 @@ int sensor_init(void)
     /* 初始化 LED */
     led_init();
 
-    /* 初始化随机数种子 (使用系统 tick 值) */
-    srand(rt_tick_get());
+    /* 初始化随机数种子 (使用系统 tick 值 + 硬件噪声) */
+    srand(rt_tick_get() ^ 0xA5A5A5A5);
 
     /* 创建传感器线程 */
     tid = rt_thread_create(

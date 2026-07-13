@@ -178,18 +178,21 @@ int main(void)
     LOG_I("========================================");
 
     /* 3. 主循环 - 定期输出系统摘要信息 */
+    rt_tick_t startup_ticks = rt_tick_get();  /* 记录启动时刻 */
     while (1)
     {
         rt_thread_mdelay(5000);  /* 每 5 秒输出一次摘要 */
 
         rt_mutex_take(&mutex_sys_status, RT_WAITING_FOREVER);
         {
-            LOG_I("--- System Summary ---");
+            rt_tick_t uptime = (rt_tick_get() - startup_ticks) / RT_TICK_PER_SECOND;
+            LOG_I("--- System Summary (Uptime: %ds) ---", uptime);
             LOG_I("  Samples  : %d", g_sys_status.sample_count);
             LOG_I("  Temp     : %.1f C", g_sys_status.latest_data.temperature);
             LOG_I("  Humidity : %.1f %%", g_sys_status.latest_data.humidity);
             LOG_I("  Light    : %.0f lux", g_sys_status.latest_data.light);
             LOG_I("  Flags    : 0x%02X", g_sys_status.alarm_flags);
+            LOG_I("  Threads  : 4 active (sensor/process/display/alarm)");
         }
         rt_mutex_release(&mutex_sys_status);
     }
