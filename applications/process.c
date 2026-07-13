@@ -172,6 +172,33 @@ static uint8_t check_thresholds(const sensor_data_t *data)
 }
 
 /* ---------------------------------------------------------------
+ * 数据统计跟踪
+ * --------------------------------------------------------------- */
+static sensor_data_t stat_min = {1000, 1000, 10000};  /* 最小值初始化为极大值 */
+static sensor_data_t stat_max = {-1000, -1000, -1000}; /* 最大值初始化为极小值 */
+static rt_bool_t stat_initialized = RT_FALSE;
+
+/*
+ * 更新数据统计 (最小/最大值)
+ */
+static void update_statistics(const sensor_data_t *data)
+{
+    if (!stat_initialized)
+    {
+        stat_min = *data;
+        stat_max = *data;
+        stat_initialized = RT_TRUE;
+        return;
+    }
+    if (data->temperature < stat_min.temperature) stat_min.temperature = data->temperature;
+    if (data->temperature > stat_max.temperature) stat_max.temperature = data->temperature;
+    if (data->humidity < stat_min.humidity)       stat_min.humidity = data->humidity;
+    if (data->humidity > stat_max.humidity)       stat_max.humidity = data->humidity;
+    if (data->light < stat_min.light)             stat_min.light = data->light;
+    if (data->light > stat_max.light)             stat_max.light = data->light;
+}
+
+/* ---------------------------------------------------------------
  * 数据处理线程
  * --------------------------------------------------------------- */
 
@@ -201,13 +228,16 @@ void process_thread_entry(void *parameter)
             continue;
         }
 
-        /* 2. 移动平均滤波 */
+        /* 2. 中值滤波 + 移动平均滤波 */
         filtered_data = apply_filter(&raw_data);
 
-        /* 3. 阈值检测 */
+        /* 3. 更新数据统计 */
+        update_statistics(&filtered_data);
+
+        /* 4. 阈值检测 */
         uint8_t flags = check_thresholds(&filtered_data);
 
-        /* 4. 更新系统状态 (互斥量保护) */
+        /* 5. 更新系统状态 (互斥量保护) */
         rt_mutex_take(&mutex_sys_status, RT_WAITING_FOREVER);
         {
             g_sys_status.alarm_flags = flags;
