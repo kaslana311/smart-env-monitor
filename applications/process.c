@@ -275,6 +275,18 @@ void process_thread_entry(void *parameter)
         }
         rt_mutex_release(&mutex_sys_status);
 
+        /* 6. 每10个样本输出统计摘要 */
+        if (g_sys_status.sample_count % 10 == 0)
+        {
+            LOG_I("=== Statistics (samples: %d) ===", g_sys_status.sample_count);
+            LOG_I("  Temp  : min=%.1f max=%.1f cur=%.1f °C",
+                  stat_min.temperature, stat_max.temperature, filtered_data.temperature);
+            LOG_I("  Humid : min=%.1f max=%.1f cur=%.1f %%",
+                  stat_min.humidity, stat_max.humidity, filtered_data.humidity);
+            LOG_I("  Light : min=%.0f max=%.0f cur=%.0f lux",
+                  stat_min.light, stat_max.light, filtered_data.light);
+        }
+
         /* 5. 通知显示线程有新数据 */
         rt_sem_release(&sem_display);
 
