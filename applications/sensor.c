@@ -23,6 +23,13 @@
 #include <rtdbg.h>
 
 /* ---------------------------------------------------------------
+ * 传感器校准参数
+ * --------------------------------------------------------------- */
+#define TEMP_OFFSET    -0.5f      /* 温度校准偏移 (°C) */
+#define HUMID_OFFSET    2.0f      /* 湿度校准偏移 (%) */
+#define LIGHT_GAIN      1.05f     /* 光照增益系数 */
+
+/* ---------------------------------------------------------------
  * LED 驱动实现
  * --------------------------------------------------------------- */
 
@@ -106,9 +113,10 @@ static void read_sensors(sensor_data_t *data)
     if (base_light < 0.0f)    base_light = 0.0f;
     if (base_light > 1000.0f) base_light = 1000.0f;
 
-    data->temperature = base_temp;
-    data->humidity    = base_humid;
-    data->light       = base_light;
+    /* 应用校准参数 */
+    data->temperature = base_temp + TEMP_OFFSET;
+    data->humidity    = base_humid + HUMID_OFFSET;
+    data->light       = base_light * LIGHT_GAIN;
 }
 
 /*
