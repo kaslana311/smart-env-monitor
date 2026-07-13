@@ -1,0 +1,13 @@
+*.bin 
+*.o 
+*.d 
+*.pyc 
+build/ 
+.idea/ 
+.vs/ 
+*.log 
+.sconsign.dblite 
+JLinkLog.txt 
+*.uvguix.* 
+*.uvoptx 
+DebugConfig/

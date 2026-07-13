@@ -1,0 +1,17 @@
+# applications/SConscript
+# 智能环境监测系统 - 应用层构建脚本
+#
+# 本文件告诉 RT-Thread 的 SCons 构建系统如何编译 applications/ 目录下的源文件。
+# 所有 .c 文件自动被包含，不需要手动列举每个文件。
+
+import os
+Import('RTT_ROOT')
+from building import *
+
+cwd = GetCurrentDir()
+src = Glob('*.c')
+CPPPATH = [cwd]
+
+group = DefineGroup('Applications', src, depend = [''], CPPPATH = CPPPATH)
+
+Return('group')
