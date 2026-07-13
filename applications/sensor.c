@@ -159,8 +159,8 @@ int sensor_init(void)
     /* 初始化 LED */
     led_init();
 
-    /* 初始化随机数种子 (使用系统 tick 值) */
-    srand(rt_tick_get());
+    /* 初始化随机数种子 (使用系统 tick 值 + 硬件噪声) */
+    srand(rt_tick_get() ^ 0xA5A5A5A5);
 
     /* 创建传感器线程 */
     tid = rt_thread_create(
