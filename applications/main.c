@@ -192,6 +192,7 @@ int main(void)
             LOG_I("  Humidity : %.1f %%", g_sys_status.latest_data.humidity);
             LOG_I("  Light    : %.0f lux", g_sys_status.latest_data.light);
             LOG_I("  Flags    : 0x%02X", g_sys_status.alarm_flags);
+            LOG_I("  Threads  : 4 active (sensor/process/display/alarm)");
         }
         rt_mutex_release(&mutex_sys_status);
     }
