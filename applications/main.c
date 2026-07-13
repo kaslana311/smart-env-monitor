@@ -122,6 +122,8 @@ int main(void)
 
     LOG_I("========================================");
     LOG_I("  Smart Environment Monitor Starting");
+    LOG_I("  Version: %s", APP_VERSION);
+    LOG_I("  Author:  %s", APP_AUTHOR);
     LOG_I("  Platform: STM32F407IG + RT-Thread");
     LOG_I("========================================");
 
