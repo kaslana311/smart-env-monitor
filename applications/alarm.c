@@ -20,6 +20,7 @@
 
 #include "alarm.h"
 #include "sensor.h"     /* LED 控制接口 */
+#include <string.h>
 
 /* 日志标签 */
 #define DBG_TAG    "alarm"
@@ -31,6 +32,50 @@
  * --------------------------------------------------------------- */
 extern struct rt_mutex    mutex_sys_status;
 extern system_status_t    g_sys_status;
+
+/* ---------------------------------------------------------------
+ * 告警历史记录
+ * --------------------------------------------------------------- */
+#define ALARM_HISTORY_MAX   20  /* 最多保留20条告警记录 */
+
+typedef struct {
+    rt_tick_t timestamp;       /* 告警发生时间 */
+    uint8_t   flags;           /* 告警标志 */
+    char      desc[32];        /* 告警描述 */
+} alarm_record_t;
+
+static alarm_record_t alarm_history[ALARM_HISTORY_MAX];
+static int            alarm_history_count = 0;
+
+/*
+ * 记录告警事件到历史缓冲区
+ */
+static void alarm_record_add(uint8_t flags)
+{
+    if (alarm_history_count >= ALARM_HISTORY_MAX)
+    {
+        /* 缓冲区满, 移除最旧记录 */
+        memmove(alarm_history, alarm_history + 1,
+                sizeof(alarm_record_t) * (ALARM_HISTORY_MAX - 1));
+        alarm_history_count = ALARM_HISTORY_MAX - 1;
+    }
+
+    alarm_record_t *rec = &alarm_history[alarm_history_count];
+    rec->timestamp = rt_tick_get();
+    rec->flags = flags;
+
+    /* 生成告警描述 */
+    int offset = 0;
+    if (flags & SYS_FLAG_TEMP_HIGH)
+        offset += rt_snprintf(rec->desc + offset, sizeof(rec->desc) - offset, "T_HIGH ");
+    if (flags & SYS_FLAG_HUMID_HIGH)
+        offset += rt_snprintf(rec->desc + offset, sizeof(rec->desc) - offset, "H_HIGH ");
+    if (flags & SYS_FLAG_LIGHT_LOW)
+        offset += rt_snprintf(rec->desc + offset, sizeof(rec->desc) - offset, "L_LOW");
+
+    alarm_history_count++;
+    LOG_I("Alarm recorded [#%d]: %s", alarm_history_count, rec->desc);
+}
 
 /* ---------------------------------------------------------------
  * 告警闪烁状态机
@@ -182,8 +227,12 @@ void alarm_thread_entry(void *parameter)
             if (current_flags == SYS_FLAG_NORMAL)
                 LOG_I("Alarm cleared - system normal");
             else
+            {
                 LOG_W("Alarm active - flags=0x%02X, mode=%d",
                       current_flags, blink_mode);
+                /* 记录告警事件到历史缓冲区 */
+                alarm_record_add(current_flags);
+            }
 
             last_flags = current_flags;
         }
