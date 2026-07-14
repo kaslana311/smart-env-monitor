@@ -163,6 +163,9 @@ void display_thread_entry(void *parameter)
         /* 3. 计算舒适度 */
         int comfort = get_comfort_level(&data);
 
+        /* 异常标记: 有告警时显示警告前缀 */
+        const char *alert_marker = (flags != SYS_FLAG_NORMAL) ? "!! " : "";
+
         /* 4. 格式化输出到串口 */
         rt_tick_t uptime = rt_tick_get() / RT_TICK_PER_SECOND;
         refresh_count++;
@@ -170,15 +173,15 @@ void display_thread_entry(void *parameter)
         if (current_mode == DISP_MODE_BRIEF)
         {
             /* 简洁模式: 单行输出 */
-            rt_kprintf("[#%d|%ds|R%d] T:%.1fC H:%.1f%% L:%.0flux %s\n",
-                       count, uptime, refresh_count,
+            rt_kprintf("%s[#%d|%ds|R%d] T:%.1fC H:%.1f%% L:%.0flux %s\n",
+                       alert_marker, count, uptime, refresh_count,
                        data.temperature, data.humidity, data.light,
                        get_status_string(flags));
         }
         else
         {
             /* 详细模式: 完整格式化输出 */
-            rt_kprintf("[Sample #%d | Uptime: %ds]\n", count, uptime);
+            rt_kprintf("%s[Sample #%d | Uptime: %ds]\n", alert_marker, count, uptime);
             if (!first_run)
             {
                 rt_kprintf("  Temperature : %5.1f C [%c]\n",
