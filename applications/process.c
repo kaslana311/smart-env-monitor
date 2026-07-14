@@ -54,6 +54,21 @@ static int   filter_index = 0;          /* 当前缓冲区写入位置 */
 static int   filter_count = 0;          /* 已填充的样本数 */
 
 /*
+ * 限幅滤波 - 限制相邻两次采样最大偏差
+ * @param current  当前采样值
+ * @param last     上一次采样值
+ * @param max_diff 最大允许偏差
+ * @return         限幅后的值
+ */
+static float limit_filter(float current, float last, float max_diff)
+{
+    float diff = current - last;
+    if (diff > max_diff)  return last + max_diff;
+    if (diff < -max_diff) return last - max_diff;
+    return current;
+}
+
+/*
  * 三点中值滤波 - 去除偶发脉冲噪声
  * @param a, b, c  最近三个原始采样值
  * @return         中位数值
