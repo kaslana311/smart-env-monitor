@@ -202,6 +202,11 @@ void alarm_thread_entry(void *parameter)
     LOG_I("Alarm thread started, priority=%d, tick=%dms",
           ALARM_THREAD_PRIORITY, ALARM_THREAD_TICK);
 
+    /* 告警迟滞计数器 (防止信号抖动导致频繁闪烁) */
+    rt_tick_t alarm_confirm_ticks = 0;   /* 告警确认计数 */
+    rt_tick_t alarm_clear_ticks  = 0;    /* 告警清除计数 */
+    #define ALARM_HYSTERESIS    5        /* 连续5个周期确认才切换状态 */
+
     /* 初始状态: LED 灭 */
     led_alarm_off();
 
@@ -222,19 +227,35 @@ void alarm_thread_entry(void *parameter)
 
         /* 4. 日志输出 (首次告警或状态变化时) */
         static uint8_t last_flags = 0xFF;  /* 初始化为不可能值 */
+        /* 迟滞判断: 防止告警信号抖动 */
+        if (current_flags != SYS_FLAG_NORMAL)
+        {
+            alarm_confirm_ticks++;
+            alarm_clear_ticks = 0;
+        }
+        else
+        {
+            alarm_clear_ticks++;
+            alarm_confirm_ticks = 0;
+        }
+
         if (current_flags != last_flags)
         {
-            if (current_flags == SYS_FLAG_NORMAL)
-                LOG_I("Alarm cleared - system normal");
-            else
+            /* 仅当持续确认超过迟滞阈值时才切换状态 */
+            if (current_flags != SYS_FLAG_NORMAL &&
+                alarm_confirm_ticks >= ALARM_HYSTERESIS)
             {
                 LOG_W("Alarm active - flags=0x%02X, mode=%d",
                       current_flags, blink_mode);
-                /* 记录告警事件到历史缓冲区 */
                 alarm_record_add(current_flags);
+                last_flags = current_flags;
             }
-
-            last_flags = current_flags;
+            else if (current_flags == SYS_FLAG_NORMAL &&
+                     alarm_clear_ticks >= ALARM_HYSTERESIS)
+            {
+                LOG_I("Alarm cleared - system normal");
+                last_flags = current_flags;
+            }
         }
 
         /* 5. 周期延时 */
