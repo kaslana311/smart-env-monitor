@@ -33,6 +33,18 @@ typedef enum {
 
 static display_mode_t current_mode = DISP_MODE_DETAIL;  /* 默认详细模式 */
 
+/*
+ * 计算变化趋势符号
+ * @return '+'上升 '-'下降 '='平稳
+ */
+static char get_trend(float current, float previous)
+{
+    float diff = current - previous;
+    if (diff > 0.5f) return '+';    /* 上升 */
+    if (diff < -0.5f) return '-';   /* 下降 */
+    return '=';                      /* 平稳 */
+}
+
 /* ---------------------------------------------------------------
  * 外部引用
  * --------------------------------------------------------------- */
@@ -123,8 +135,10 @@ static const char *comfort_labels[] = {
 void display_thread_entry(void *parameter)
 {
     sensor_data_t data;
+    sensor_data_t prev_data = {0};  /* 上一次数据，用于计算趋势 */
     uint8_t       flags;
     uint32_t      count;
+    rt_bool_t     first_run = RT_TRUE;
 
     LOG_I("Display thread started, priority=%d", DISPLAY_THREAD_PRIORITY);
 
@@ -168,13 +182,29 @@ void display_thread_entry(void *parameter)
         {
             /* 详细模式: 完整格式化输出 */
             rt_kprintf("[Sample #%d | Uptime: %ds]\n", count, uptime);
-            rt_kprintf("  Temperature : %5.1f C\n", data.temperature);
-            rt_kprintf("  Humidity    : %5.1f %%\n", data.humidity);
-            rt_kprintf("  Light       : %5.0f lux\n", data.light);
+            if (!first_run)
+            {
+                rt_kprintf("  Temperature : %5.1f C [%c]\n",
+                          data.temperature, get_trend(data.temperature, prev_data.temperature));
+                rt_kprintf("  Humidity    : %5.1f %% [%c]\n",
+                          data.humidity, get_trend(data.humidity, prev_data.humidity));
+                rt_kprintf("  Light       : %5.0f lux [%c]\n",
+                          data.light, get_trend(data.light, prev_data.light));
+            }
+            else
+            {
+                rt_kprintf("  Temperature : %5.1f C\n", data.temperature);
+                rt_kprintf("  Humidity    : %5.1f %%\n", data.humidity);
+                rt_kprintf("  Light       : %5.0f lux\n", data.light);
+            }
             rt_kprintf("  Comfort     : %s\n", comfort_labels[comfort]);
             rt_kprintf("  Status      : %s\n", get_status_string(flags));
             rt_kprintf("----------------------------------------\n");
         }
+
+        /* 保存当前数据，用于下次趋势计算 */
+        prev_data = data;
+        first_run = RT_FALSE;
     }
 }
 
