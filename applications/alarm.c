@@ -261,6 +261,19 @@ void alarm_thread_entry(void *parameter)
         /* 5. 周期延时 */
         rt_thread_mdelay(ALARM_THREAD_TICK);
         tick_count++;
+
+        /* 6. 每500个周期(100秒)输出告警统计 */
+        static uint32_t total_alarm_cycles = 0;
+        if (current_flags != SYS_FLAG_NORMAL)
+        {
+            total_alarm_cycles++;
+        }
+        if (tick_count % 500 == 0)
+        {
+            LOG_I("Alarm stats: %d/%d cycles in alarm state (%.1f%%)",
+                  total_alarm_cycles, tick_count,
+                  (float)total_alarm_cycles / (float)tick_count * 100.0f);
+        }
     }
 }
 
