@@ -24,6 +24,16 @@
 #include <rtdbg.h>
 
 /* ---------------------------------------------------------------
+ * 显示模式配置
+ * --------------------------------------------------------------- */
+typedef enum {
+    DISP_MODE_BRIEF,     /* 简洁模式: 仅显示核心数据 */
+    DISP_MODE_DETAIL     /* 详细模式: 显示完整信息 */
+} display_mode_t;
+
+static display_mode_t current_mode = DISP_MODE_DETAIL;  /* 默认详细模式 */
+
+/* ---------------------------------------------------------------
  * 外部引用
  * --------------------------------------------------------------- */
 extern struct rt_mutex     mutex_sys_status;
@@ -145,13 +155,26 @@ void display_thread_entry(void *parameter)
 
         /* 4. 格式化输出到串口 */
         rt_tick_t uptime = rt_tick_get() / RT_TICK_PER_SECOND;
-        rt_kprintf("[Sample #%d | Uptime: %ds]\n", count, uptime);
-        rt_kprintf("  Temperature : %5.1f C\n", data.temperature);
-        rt_kprintf("  Humidity    : %5.1f %%\n", data.humidity);
-        rt_kprintf("  Light       : %5.0f lux\n", data.light);
-        rt_kprintf("  Comfort     : %s\n", comfort_labels[comfort]);
-        rt_kprintf("  Status      : %s\n", get_status_string(flags));
-        rt_kprintf("----------------------------------------\n");
+
+        if (current_mode == DISP_MODE_BRIEF)
+        {
+            /* 简洁模式: 单行输出 */
+            rt_kprintf("[#%d|%ds] T:%.1fC H:%.1f%% L:%.0flux %s\n",
+                       count, uptime,
+                       data.temperature, data.humidity, data.light,
+                       get_status_string(flags));
+        }
+        else
+        {
+            /* 详细模式: 完整格式化输出 */
+            rt_kprintf("[Sample #%d | Uptime: %ds]\n", count, uptime);
+            rt_kprintf("  Temperature : %5.1f C\n", data.temperature);
+            rt_kprintf("  Humidity    : %5.1f %%\n", data.humidity);
+            rt_kprintf("  Light       : %5.0f lux\n", data.light);
+            rt_kprintf("  Comfort     : %s\n", comfort_labels[comfort]);
+            rt_kprintf("  Status      : %s\n", get_status_string(flags));
+            rt_kprintf("----------------------------------------\n");
+        }
     }
 }
 
