@@ -16,6 +16,7 @@
 
 #include "sensor.h"
 #include <stdlib.h>
+#include <math.h>
 
 /* 日志标签 */
 #define DBG_TAG    "sensor"
@@ -108,8 +109,13 @@ static void read_sensors(sensor_data_t *data)
     if (base_humid < 20.0f) base_humid = 20.0f;
     if (base_humid > 95.0f) base_humid = 95.0f;
 
-    /* 光照: ±20 lux 波动 */
+    /* 光照: 叠加昼夜周期 + 随机波动 */
+    float day_phase = (float)(rt_tick_get() % (120 * RT_TICK_PER_SECOND))
+                      / (120.0f * RT_TICK_PER_SECOND);  /* 120秒一个昼夜周期 */
+    float day_factor = 0.3f + 0.7f * (0.5f + 0.5f *
+                       sinf((day_phase - 0.25f) * 2.0f * 3.14159f));
     base_light += ((float)(rand() % 4000) / 100.0f - 20.0f);
+    base_light = base_light * 0.9f + 800.0f * day_factor * 0.1f;  /* 缓慢趋向昼夜目标 */
     if (base_light < 0.0f)    base_light = 0.0f;
     if (base_light > 1000.0f) base_light = 1000.0f;
 
