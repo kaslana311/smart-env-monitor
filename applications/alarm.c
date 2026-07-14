@@ -253,7 +253,9 @@ void alarm_thread_entry(void *parameter)
             else if (current_flags == SYS_FLAG_NORMAL &&
                      alarm_clear_ticks >= ALARM_HYSTERESIS)
             {
-                LOG_I("Alarm cleared - system normal");
+                rt_tick_t alarm_duration = (rt_tick_get() - alarm_history[alarm_history_count-1].timestamp)
+                                           / RT_TICK_PER_SECOND;
+                LOG_I("Alarm cleared - system normal (last alarm duration: %d seconds)", alarm_duration);
                 last_flags = current_flags;
             }
         }
