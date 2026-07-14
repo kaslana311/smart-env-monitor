@@ -143,6 +143,7 @@ void display_thread_entry(void *parameter)
     rt_kprintf("========================================\n");
     rt_kprintf("  Smart Environment Monitor v1.0\n");
     rt_kprintf("  STM32F407 + RT-Thread\n");
+    rt_kprintf("  Build: %s %s\n", __DATE__, __TIME__);
     rt_kprintf("========================================\n");
     rt_kprintf("\n");
 
