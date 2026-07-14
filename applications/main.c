@@ -181,8 +181,8 @@ int main(void)
     rt_tick_t startup_ticks = rt_tick_get();  /* 记录启动时刻 */
     while (1)
     {
-        rt_thread_mdelay(10000);  /* 黄改为每 10 秒输出一次摘要，降低日志输出量 */
 
+ rt_thread_mdelay(5000);
         rt_mutex_take(&mutex_sys_status, RT_WAITING_FOREVER);
         {
             rt_tick_t uptime = (rt_tick_get() - startup_ticks) / RT_TICK_PER_SECOND;
