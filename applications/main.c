@@ -181,7 +181,7 @@ int main(void)
     rt_tick_t startup_ticks = rt_tick_get();  /* 记录启动时刻 */
     while (1)
     {
-        rt_thread_mdelay(5000);  /* 每 5 秒输出一次摘要 */
+        rt_thread_mdelay(3000);  /* 邹改为每 3 秒输出一次摘要，提高上报频率 */
 
         rt_mutex_take(&mutex_sys_status, RT_WAITING_FOREVER);
         {
