@@ -144,7 +144,8 @@ void display_thread_entry(void *parameter)
         int comfort = get_comfort_level(&data);
 
         /* 4. 格式化输出到串口 */
-        rt_kprintf("[Sample #%d]\n", count);
+        rt_tick_t uptime = rt_tick_get() / RT_TICK_PER_SECOND;
+        rt_kprintf("[Sample #%d | Uptime: %ds]\n", count, uptime);
         rt_kprintf("  Temperature : %5.1f C\n", data.temperature);
         rt_kprintf("  Humidity    : %5.1f %%\n", data.humidity);
         rt_kprintf("  Light       : %5.0f lux\n", data.light);
