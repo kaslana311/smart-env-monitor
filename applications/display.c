@@ -26,12 +26,8 @@
 /* ---------------------------------------------------------------
  * 显示模式配置
  * --------------------------------------------------------------- */
-typedef enum {
-    DISP_MODE_BRIEF,     /* 简洁模式: 仅显示核心数据 */
-    DISP_MODE_DETAIL     /* 详细模式: 显示完整信息 */
-} display_mode_t;
-
-static display_mode_t current_mode = DISP_MODE_DETAIL;  /* 默认详细模式 */
+static display_mode_t current_mode = DEFAULT_DISPLAY_MODE;   /* 使用app_config.h中的默认值 */
+static uint32_t       refresh_count = 0;                      /* 刷新计数器 */
 
 /*
  * 计算变化趋势符号
@@ -169,12 +165,13 @@ void display_thread_entry(void *parameter)
 
         /* 4. 格式化输出到串口 */
         rt_tick_t uptime = rt_tick_get() / RT_TICK_PER_SECOND;
+        refresh_count++;
 
         if (current_mode == DISP_MODE_BRIEF)
         {
             /* 简洁模式: 单行输出 */
-            rt_kprintf("[#%d|%ds] T:%.1fC H:%.1f%% L:%.0flux %s\n",
-                       count, uptime,
+            rt_kprintf("[#%d|%ds|R%d] T:%.1fC H:%.1f%% L:%.0flux %s\n",
+                       count, uptime, refresh_count,
                        data.temperature, data.humidity, data.light,
                        get_status_string(flags));
         }
