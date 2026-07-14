@@ -20,6 +20,7 @@
 
 #include "alarm.h"
 #include "sensor.h"     /* LED 控制接口 */
+#include <string.h>
 
 /* 日志标签 */
 #define DBG_TAG    "alarm"
@@ -31,6 +32,50 @@
  * --------------------------------------------------------------- */
 extern struct rt_mutex    mutex_sys_status;
 extern system_status_t    g_sys_status;
+
+/* ---------------------------------------------------------------
+ * 告警历史记录
+ * --------------------------------------------------------------- */
+#define ALARM_HISTORY_MAX   20  /* 最多保留20条告警记录 */
+
+typedef struct {
+    rt_tick_t timestamp;       /* 告警发生时间 */
+    uint8_t   flags;           /* 告警标志 */
+    char      desc[32];        /* 告警描述 */
+} alarm_record_t;
+
+static alarm_record_t alarm_history[ALARM_HISTORY_MAX];
+static int            alarm_history_count = 0;
+
+/*
+ * 记录告警事件到历史缓冲区
+ */
+static void alarm_record_add(uint8_t flags)
+{
+    if (alarm_history_count >= ALARM_HISTORY_MAX)
+    {
+        /* 缓冲区满, 移除最旧记录 */
+        memmove(alarm_history, alarm_history + 1,
+                sizeof(alarm_record_t) * (ALARM_HISTORY_MAX - 1));
+        alarm_history_count = ALARM_HISTORY_MAX - 1;
+    }
+
+    alarm_record_t *rec = &alarm_history[alarm_history_count];
+    rec->timestamp = rt_tick_get();
+    rec->flags = flags;
+
+    /* 生成告警描述 */
+    int offset = 0;
+    if (flags & SYS_FLAG_TEMP_HIGH)
+        offset += rt_snprintf(rec->desc + offset, sizeof(rec->desc) - offset, "T_HIGH ");
+    if (flags & SYS_FLAG_HUMID_HIGH)
+        offset += rt_snprintf(rec->desc + offset, sizeof(rec->desc) - offset, "H_HIGH ");
+    if (flags & SYS_FLAG_LIGHT_LOW)
+        offset += rt_snprintf(rec->desc + offset, sizeof(rec->desc) - offset, "L_LOW");
+
+    alarm_history_count++;
+    LOG_I("Alarm recorded [#%d]: %s", alarm_history_count, rec->desc);
+}
 
 /* ---------------------------------------------------------------
  * 告警闪烁状态机
@@ -157,6 +202,11 @@ void alarm_thread_entry(void *parameter)
     LOG_I("Alarm thread started, priority=%d, tick=%dms",
           ALARM_THREAD_PRIORITY, ALARM_THREAD_TICK);
 
+    /* 告警迟滞计数器 (防止信号抖动导致频繁闪烁) */
+    rt_tick_t alarm_confirm_ticks = 0;   /* 告警确认计数 */
+    rt_tick_t alarm_clear_ticks  = 0;    /* 告警清除计数 */
+    #define ALARM_HYSTERESIS    5        /* 连续5个周期确认才切换状态 */
+
     /* 初始状态: LED 灭 */
     led_alarm_off();
 
@@ -177,15 +227,35 @@ void alarm_thread_entry(void *parameter)
 
         /* 4. 日志输出 (首次告警或状态变化时) */
         static uint8_t last_flags = 0xFF;  /* 初始化为不可能值 */
+        /* 迟滞判断: 防止告警信号抖动 */
+        if (current_flags != SYS_FLAG_NORMAL)
+        {
+            alarm_confirm_ticks++;
+            alarm_clear_ticks = 0;
+        }
+        else
+        {
+            alarm_clear_ticks++;
+            alarm_confirm_ticks = 0;
+        }
+
         if (current_flags != last_flags)
         {
-            if (current_flags == SYS_FLAG_NORMAL)
-                LOG_I("Alarm cleared - system normal");
-            else
+            /* 仅当持续确认超过迟滞阈值时才切换状态 */
+            if (current_flags != SYS_FLAG_NORMAL &&
+                alarm_confirm_ticks >= ALARM_HYSTERESIS)
+            {
                 LOG_W("Alarm active - flags=0x%02X, mode=%d",
                       current_flags, blink_mode);
-
-            last_flags = current_flags;
+                alarm_record_add(current_flags);
+                last_flags = current_flags;
+            }
+            else if (current_flags == SYS_FLAG_NORMAL &&
+                     alarm_clear_ticks >= ALARM_HYSTERESIS)
+            {
+                LOG_I("Alarm cleared - system normal");
+                last_flags = current_flags;
+            }
         }
 
         /* 5. 周期延时 */

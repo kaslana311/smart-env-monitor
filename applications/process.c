@@ -40,12 +40,31 @@ extern system_status_t g_sys_status;
  * 移动平均滤波器实现
  * --------------------------------------------------------------- */
 
+/* 原始值历史 (用于中值滤波预处理) */
+static float temp_raw_hist[3]  = {0};
+static float humid_raw_hist[3] = {0};
+static float light_raw_hist[3] = {0};
+static int   raw_hist_index = 0;
+
 /* 温度滤波缓冲区 */
 static float temp_buffer[FILTER_WINDOW_SIZE]  = {0};
 static float humid_buffer[FILTER_WINDOW_SIZE] = {0};
 static float light_buffer[FILTER_WINDOW_SIZE] = {0};
 static int   filter_index = 0;          /* 当前缓冲区写入位置 */
 static int   filter_count = 0;          /* 已填充的样本数 */
+
+/*
+ * 三点中值滤波 - 去除偶发脉冲噪声
+ * @param a, b, c  最近三个原始采样值
+ * @return         中位数值
+ */
+static float median3(float a, float b, float c)
+{
+    if (a > b) { float t = a; a = b; b = t; }
+    if (a > c) { float t = a; a = c; c = t; }
+    if (b > c) { float t = b; b = c; c = t; }
+    return b;
+}
 
 /*
  * 计算移动平均值
@@ -71,11 +90,31 @@ static float calc_moving_average(const float *buffer, int count)
 static sensor_data_t apply_filter(const sensor_data_t *raw)
 {
     sensor_data_t filtered;
+    sensor_data_t prefiltered;
 
-    /* 写入循环缓冲区 */
-    temp_buffer[filter_index]  = raw->temperature;
-    humid_buffer[filter_index] = raw->humidity;
-    light_buffer[filter_index] = raw->light;
+    /* 记录原始值历史 */
+    temp_raw_hist[raw_hist_index]  = raw->temperature;
+    humid_raw_hist[raw_hist_index] = raw->humidity;
+    light_raw_hist[raw_hist_index] = raw->light;
+
+    /* 中值滤波预处理 (去除脉冲噪声) */
+    prefiltered.temperature = median3(temp_raw_hist[0],
+                                      temp_raw_hist[1],
+                                      temp_raw_hist[2]);
+    prefiltered.humidity = median3(humid_raw_hist[0],
+                                    humid_raw_hist[1],
+                                    humid_raw_hist[2]);
+    prefiltered.light = median3(light_raw_hist[0],
+                                 light_raw_hist[1],
+                                 light_raw_hist[2]);
+
+    raw_hist_index++;
+    if (raw_hist_index >= 3) raw_hist_index = 0;
+
+    /* 写入移动平均循环缓冲区 */
+    temp_buffer[filter_index]  = prefiltered.temperature;
+    humid_buffer[filter_index] = prefiltered.humidity;
+    light_buffer[filter_index] = prefiltered.light;
 
     filter_index++;
     if (filter_index >= FILTER_WINDOW_SIZE)
@@ -133,6 +172,62 @@ static uint8_t check_thresholds(const sensor_data_t *data)
 }
 
 /* ---------------------------------------------------------------
+ * 数据质量评估
+ * --------------------------------------------------------------- */
+
+/*
+ * 评估传感器数据质量等级
+ * @return 0-优秀 1-良好 2-可疑 3-不可靠
+ */
+static int evaluate_data_quality(const sensor_data_t *raw, const sensor_data_t *filtered)
+{
+    int quality = 0;
+
+    /* 检查原始值与滤波值偏差 */
+    float temp_diff = raw->temperature - filtered->temperature;
+    float humid_diff = raw->humidity - filtered->humidity;
+    float light_diff = raw->light - filtered->light;
+
+    if (temp_diff > 3.0f || temp_diff < -3.0f) quality++;
+    if (humid_diff > 5.0f || humid_diff < -5.0f) quality++;
+    if (light_diff > 100.0f || light_diff < -100.0f) quality++;
+
+    if (quality > 2) quality = 2;  /* 最高为可疑 */
+
+    return quality;
+}
+
+/* 数据质量标签 */
+static const char *quality_labels[] = {"Excellent", "Good", "Suspicious"};
+
+/* ---------------------------------------------------------------
+ * 数据统计跟踪
+ * --------------------------------------------------------------- */
+static sensor_data_t stat_min = {1000, 1000, 10000};  /* 最小值初始化为极大值 */
+static sensor_data_t stat_max = {-1000, -1000, -1000}; /* 最大值初始化为极小值 */
+static rt_bool_t stat_initialized = RT_FALSE;
+
+/*
+ * 更新数据统计 (最小/最大值)
+ */
+static void update_statistics(const sensor_data_t *data)
+{
+    if (!stat_initialized)
+    {
+        stat_min = *data;
+        stat_max = *data;
+        stat_initialized = RT_TRUE;
+        return;
+    }
+    if (data->temperature < stat_min.temperature) stat_min.temperature = data->temperature;
+    if (data->temperature > stat_max.temperature) stat_max.temperature = data->temperature;
+    if (data->humidity < stat_min.humidity)       stat_min.humidity = data->humidity;
+    if (data->humidity > stat_max.humidity)       stat_max.humidity = data->humidity;
+    if (data->light < stat_min.light)             stat_min.light = data->light;
+    if (data->light > stat_max.light)             stat_max.light = data->light;
+}
+
+/* ---------------------------------------------------------------
  * 数据处理线程
  * --------------------------------------------------------------- */
 
@@ -162,13 +257,16 @@ void process_thread_entry(void *parameter)
             continue;
         }
 
-        /* 2. 移动平均滤波 */
+        /* 2. 中值滤波 + 移动平均滤波 */
         filtered_data = apply_filter(&raw_data);
 
-        /* 3. 阈值检测 */
+        /* 3. 更新数据统计 */
+        update_statistics(&filtered_data);
+
+        /* 4. 阈值检测 */
         uint8_t flags = check_thresholds(&filtered_data);
 
-        /* 4. 更新系统状态 (互斥量保护) */
+        /* 5. 更新系统状态 (互斥量保护) */
         rt_mutex_take(&mutex_sys_status, RT_WAITING_FOREVER);
         {
             g_sys_status.alarm_flags = flags;
@@ -177,15 +275,28 @@ void process_thread_entry(void *parameter)
         }
         rt_mutex_release(&mutex_sys_status);
 
+        /* 6. 每10个样本输出统计摘要 */
+        if (g_sys_status.sample_count % 10 == 0)
+        {
+            LOG_I("=== Statistics (samples: %d) ===", g_sys_status.sample_count);
+            LOG_I("  Temp  : min=%.1f max=%.1f cur=%.1f °C",
+                  stat_min.temperature, stat_max.temperature, filtered_data.temperature);
+            LOG_I("  Humid : min=%.1f max=%.1f cur=%.1f %%",
+                  stat_min.humidity, stat_max.humidity, filtered_data.humidity);
+            LOG_I("  Light : min=%.0f max=%.0f cur=%.0f lux",
+                  stat_min.light, stat_max.light, filtered_data.light);
+        }
+
         /* 5. 通知显示线程有新数据 */
         rt_sem_release(&sem_display);
 
-        LOG_D("Processed sample #%d: T=%.1f H=%.1f L=%.0f flags=0x%02X",
+        LOG_D("Processed sample #%d: T=%.1f H=%.1f L=%.0f flags=0x%02X quality=%s",
               g_sys_status.sample_count,
               filtered_data.temperature,
               filtered_data.humidity,
               filtered_data.light,
-              flags);
+              flags,
+              quality_labels[evaluate_data_quality(&raw_data, &filtered_data)]);
     }
 }
 
